@@ -142,7 +142,7 @@ if ($isLoggedIn) {
             </div>
         </div>
 
-        <div class="order-card">
+        <div class="order-card" onclick="<?php echo $isLoggedIn ? "openModal('stickerModal')" : "openModal('loginModal')"; ?>">
             <div class="order-card-media">
                 <img src="2.png" alt="Sticker">
             </div>
@@ -352,9 +352,9 @@ if ($isLoggedIn) {
                 <label class="upload-box" for="designFile">
                     <i class="fa-solid fa-cloud-arrow-up"></i>
                     <p>Click to upload your design</p>
-                    <span class="upload-filename" id="fileNameDisplay"></span>
+                    <span class="upload-filename" id="fileNameDisplayTarp"></span>
                 </label>
-                <input type="file" id="designFile" name="design_file" accept="image/*,.pdf" onchange="showFileName(this)">
+                <input type="file" id="designFile" name="design_file" accept="image/*,.pdf" onchange="showFileName(this, 'fileNameDisplayTarp')">
             </div>
 
             <div class="form-row">
@@ -382,6 +382,60 @@ if ($isLoggedIn) {
         </form>
     </div>
 </div>
+
+<div class="modal-overlay" id="stickerModal">
+    <div class="modal-box">
+        <button class="modal-close" onclick="closeModal('stickerModal')"><i class="fa-solid fa-xmark"></i></button>
+        <h2>Order Sticker</h2>
+        <p class="modal-sub">Upload your design and fill in the order details.</p>
+
+        <form method="POST" action="pages/order_sticker.php" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Design File</label>
+                <label class="upload-box" for="designFileSticker">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <p>Click to upload your design</p>
+                    <span class="upload-filename" id="fileNameDisplaySticker"></span>
+                </label>
+                <input type="file" id="designFileSticker" name="design_file" accept="image/*,.pdf" onchange="showFileName(this, 'fileNameDisplaySticker')">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Width (in)</label>
+                    <input type="number" name="width" step="0.1" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label>Height (in)</label>
+                    <input type="number" name="height" step="0.1" min="1" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Shape</label>
+                <select name="shape" required>
+                    <option value="">Select shape</option>
+                    <option value="square">Square</option>
+                    <option value="rectangle">Rectangle</option>
+                    <option value="circle">Circle</option>
+                    <option value="die-cut">Die-Cut (Custom Shape)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Quantity</label>
+                <input type="number" name="quantity" min="1" value="1" required>
+            </div>
+
+            <div class="form-group">
+                <label>Additional Notes</label>
+                <textarea name="notes" placeholder="Finish, spacing, special instructions..."></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-dark modal-submit">Submit Order</button>
+        </form>
+    </div>
+</div>
 <?php } ?>
 
 <script>
@@ -398,8 +452,8 @@ function switchModal(fromId, toId) {
     openModal(toId);
 }
 
-function showFileName(input) {
-    var display = document.getElementById('fileNameDisplay');
+function showFileName(input, displayId) {
+    var display = document.getElementById(displayId);
     if (input.files.length > 0) {
         display.textContent = input.files[0].name;
     }

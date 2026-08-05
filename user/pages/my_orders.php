@@ -76,6 +76,9 @@ while ($row = mysqli_fetch_assoc($result)) {
                         </div>
                         <p class="order-item-spec">
                             <?php echo htmlspecialchars($order['width']); ?>ft &times; <?php echo htmlspecialchars($order['height']); ?>ft
+                            <?php if (!empty($order['shape'])) { ?>
+                                &middot; Shape: <?php echo htmlspecialchars(ucfirst($order['shape'])); ?>
+                            <?php } ?>
                             &middot; Qty: <?php echo htmlspecialchars($order['quantity']); ?>
                         </p>
                         <?php if (!empty($order['notes'])) { ?>
@@ -94,9 +97,9 @@ while ($row = mysqli_fetch_assoc($result)) {
                                 </form>
                             </div>
                         <?php } elseif ($status === 'pending') { ?>
-                            <p class="order-item-waiting"><i class="fa-solid fa-clock"></i> Waiting for quotation from our team.</p>
+                            <p class="order-item-waiting"><i class="fa-solid fa-clock"></i> Pending.</p>
                         <?php } elseif ($status === 'approved') { ?>
-                            <p class="order-item-waiting"><i class="fa-solid fa-check"></i> Confirmed. Your order is being processed.</p>
+                            <p class="order-item-waiting"><i class="fa-solid fa-check"></i> Confirmed.</p>
                         <?php } ?>
                     </div>
                 </div>
