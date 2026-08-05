@@ -1,0 +1,29 @@
+printing/
+│
+├── admin/
+│
+├── config/
+│   └── db.php
+│
+├── font/
+│   ├── css/
+│   ├── js/
+│   ├── webfonts/
+│   └── LICENSE.txt
+│
+├── staff/
+│   ├── dashboard.php
+│   ├── login.php
+│   ├── sidebar.php
+│   └── index.php
+│
+└── user/
+    ├── index.php
+    ├── home.php
+    ├── logout.php
+    ├── background.png
+    ├── 1.png
+    ├── 2.png
+    │
+    └── pages/
+        └── order_tarpaulin.php
