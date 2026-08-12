@@ -59,12 +59,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register_submit'])) {
 $isLoggedIn = isset($_SESSION['client_id']);
 
 $pendingOrderCount = 0;
+$deliveryCount = 0;
 if ($isLoggedIn) {
     $client_id = $_SESSION['client_id'];
     $countResult = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM orders WHERE client_id = '$client_id' AND status IN ('pending', 'quoted')");
     if ($countResult) {
         $countRow = mysqli_fetch_assoc($countResult);
         $pendingOrderCount = (int) $countRow['cnt'];
+    }
+
+    $deliveryResult = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM orders WHERE client_id = '$client_id' AND fulfillment_method = 'delivery' AND status = 'approved'");
+    if ($deliveryResult) {
+        $deliveryRow = mysqli_fetch_assoc($deliveryResult);
+        $deliveryCount = (int) $deliveryRow['cnt'];
     }
 }
 ?>
@@ -103,6 +110,12 @@ if ($isLoggedIn) {
                     <span class="cart-badge"><?php echo $pendingOrderCount; ?></span>
                 <?php } ?>
             </a>
+            <a href="pages/my_deliveries.php" class="cart-icon" aria-label="My Deliveries">
+                <i class="fa-solid fa-truck"></i>
+                <?php if ($deliveryCount > 0) { ?>
+                    <span class="cart-badge"><?php echo $deliveryCount; ?></span>
+                <?php } ?>
+            </a>
             <span class="greeting">HI, <?php echo strtoupper($_SESSION['client_username']); ?></span>
             <a href="logout.php" class="btn btn-outline"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
         <?php } else { ?>
@@ -117,7 +130,6 @@ if ($isLoggedIn) {
         <img src="background.png" alt="Printing Services">
     </div>
     <div class="hero-content">
-        <span class="eyebrow">Tarpaulin &amp; Graphics Printing</span>
         <h1>Print Your Design,<br><em>Track</em> Every Step</h1>
         <p>Submit your design online, get an instant price quote, and follow your order from production to pick-up or delivery.</p>
         <div class="hero-actions">
@@ -374,6 +386,14 @@ if ($isLoggedIn) {
             </div>
 
             <div class="form-group">
+                <label>Pick-up or Delivery</label>
+                <select name="fulfillment_method" required>
+                    <option value="pickup">Pick-up at Shop</option>
+                    <option value="delivery">Delivery</option>
+                </select>
+            </div>
+
+            <div class="form-group">
                 <label>Additional Notes</label>
                 <textarea name="notes" placeholder="Eyelets, orientation, special instructions..."></textarea>
             </div>
@@ -425,6 +445,14 @@ if ($isLoggedIn) {
             <div class="form-group">
                 <label>Quantity</label>
                 <input type="number" name="quantity" min="1" value="1" required>
+            </div>
+
+            <div class="form-group">
+                <label>Pick-up or Delivery</label>
+                <select name="fulfillment_method" required>
+                    <option value="pickup">Pick-up at Shop</option>
+                    <option value="delivery">Delivery</option>
+                </select>
             </div>
 
             <div class="form-group">

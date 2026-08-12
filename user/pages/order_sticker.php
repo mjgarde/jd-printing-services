@@ -17,6 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $height = mysqli_real_escape_string($conn, $_POST['height']);
     $shape = mysqli_real_escape_string($conn, $_POST['shape']);
     $quantity = mysqli_real_escape_string($conn, $_POST['quantity']);
+    $fulfillment_method = mysqli_real_escape_string($conn, $_POST['fulfillment_method']);
     $notes = mysqli_real_escape_string($conn, $_POST['notes']);
 
     $design_file = "";
@@ -71,8 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         showAlert($errorMsg);
     }
 
-    $sql = "INSERT INTO orders (client_id, product_type, design_file, width, height, shape, quantity, notes, status)
-            VALUES ('$client_id', 'Sticker', '$design_file', '$width', '$height', '$shape', '$quantity', '$notes', 'pending')";
+    $sql = "INSERT INTO orders (client_id, product_type, design_file, width, height, shape, quantity, fulfillment_method, notes, status)
+            VALUES ('$client_id', 'Sticker', '$design_file', '$width', '$height', '$shape', '$quantity', '$fulfillment_method', '$notes', 'pending')";
 
     if (mysqli_query($conn, $sql)) {
         showAlert('Order submitted successfully! We will review your quotation soon.');

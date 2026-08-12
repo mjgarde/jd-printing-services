@@ -9,17 +9,17 @@ if (!isset($_SESSION['client_id'])) {
 
 $client_id = $_SESSION['client_id'];
 
-$result = mysqli_query($conn, "SELECT * FROM orders WHERE client_id = '$client_id' ORDER BY id DESC");
-$orders = [];
+$result = mysqli_query($conn, "SELECT * FROM orders WHERE client_id = '$client_id' AND fulfillment_method = 'delivery' ORDER BY id DESC");
+$deliveries = [];
 while ($row = mysqli_fetch_assoc($result)) {
-    $orders[] = $row;
+    $deliveries[] = $row;
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>My Orders — JD Printing Services</title>
+    <title>My Deliveries — JD Printing Services</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="../../font/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -37,27 +37,26 @@ while ($row = mysqli_fetch_assoc($result)) {
     </div>
 </div>
 
-<div class="section" id="my-orders">
+<div class="section" id="my-deliveries">
     <div class="section-head">
         <span class="eyebrow">Your Account</span>
-        <h2>My Orders</h2>
-        <p>Track your pending, quoted, and approved orders.</p>
+        <h2>My Deliveries</h2>
+        <p>Track orders you chose to have delivered.</p>
     </div>
 
     <div class="orders-list">
-        <?php if (count($orders) === 0) { ?>
+        <?php if (count($deliveries) === 0) { ?>
             <div class="orders-empty">
-                <i class="fa-solid fa-inbox"></i>
-                <p>You don't have any orders yet.</p>
+                <i class="fa-solid fa-truck"></i>
+                <p>You don't have any delivery orders yet.</p>
                 <a href="../index.php#order" class="btn btn-dark">Place an Order</a>
             </div>
         <?php } else { ?>
-            <?php foreach ($orders as $order) { ?>
+            <?php foreach ($deliveries as $order) { ?>
                 <?php
                     $status = $order['status'];
                     $statusLabel = ucfirst($status);
                     $statusClass = 'status-' . $status;
-                    $fulfillmentLabel = $order['fulfillment_method'] === 'delivery' ? 'Delivery' : 'Pick-up at Shop';
                 ?>
                 <div class="order-item">
                     <div class="order-item-media">
@@ -78,27 +77,14 @@ while ($row = mysqli_fetch_assoc($result)) {
                                 &middot; Shape: <?php echo htmlspecialchars(ucfirst($order['shape'])); ?>
                             <?php } ?>
                             &middot; Qty: <?php echo htmlspecialchars($order['quantity']); ?>
-                            &middot; <?php echo htmlspecialchars($fulfillmentLabel); ?>
                         </p>
-                        <?php if (!empty($order['notes'])) { ?>
-                            <p class="order-item-notes"><?php echo htmlspecialchars($order['notes']); ?></p>
-                        <?php } ?>
 
-                        <?php if ($status === 'quoted' && $order['quoted_price'] !== null) { ?>
-                            <div class="order-quote-box">
-                                <div class="order-quote-price">
-                                    <span>Quoted Price</span>
-                                    <strong>&#8369;<?php echo number_format($order['quoted_price'], 2); ?></strong>
-                                </div>
-                                <form method="POST" action="confirm_order.php">
-                                    <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
-                                    <button type="submit" name="confirm_submit" class="btn btn-dark">Confirm Order</button>
-                                </form>
-                            </div>
-                        <?php } elseif ($status === 'pending') { ?>
-                            <p class="order-item-waiting"><i class="fa-solid fa-clock"></i> Pending.</p>
-                        <?php } elseif ($status === 'approved') { ?>
-                            <p class="order-item-waiting"><i class="fa-solid fa-check"></i> Confirmed.</p>
+                        <?php if ($status === 'approved') { ?>
+                            <p class="order-item-waiting"><i class="fa-solid fa-truck"></i> Confirmed for delivery. Our team will coordinate the delivery schedule with you.</p>
+                        <?php } elseif ($status === 'quoted') { ?>
+                            <p class="order-item-waiting"><i class="fa-solid fa-hourglass-half"></i> Awaiting your confirmation before delivery can be scheduled.</p>
+                        <?php } else { ?>
+                            <p class="order-item-waiting"><i class="fa-solid fa-clock"></i> Waiting for quotation from our team.</p>
                         <?php } ?>
                     </div>
                 </div>
