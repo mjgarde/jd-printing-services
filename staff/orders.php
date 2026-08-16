@@ -10,32 +10,54 @@ if (!isset($_SESSION['staff_id'])) {
 $activePage = 'orders';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['quote_submit'])) {
-    $order_id = mysqli_real_escape_string($conn, $_POST['order_id']);
-    $quoted_price = mysqli_real_escape_string($conn, $_POST['quoted_price']);
+    $order_id = trim($_POST['order_id']);
+    $quoted_price = trim($_POST['quoted_price']);
 
-    mysqli_query($conn, "UPDATE orders SET quoted_price = '$quoted_price', status = 'quoted' WHERE id = '$order_id'");
+    $stmt = mysqli_prepare($conn, "UPDATE orders SET quoted_price = ?, status = 'quoted' WHERE id = ?");
+    mysqli_stmt_bind_param($stmt, "di", $quoted_price, $order_id);
+    mysqli_stmt_execute($stmt);
+    mysqli_stmt_close($stmt);
+
     header("Location: orders.php");
     exit();
 }
 
 $category = isset($_GET['category']) ? $_GET['category'] : 'all';
 $sort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
+$view = isset($_GET['view']) && $_GET['view'] === 'approved' ? 'approved' : 'active';
 
-$where = "";
+$conditions = [];
 if ($category === 'Tarpaulin' || $category === 'Sticker') {
-    $where = "WHERE o.product_type = '" . mysqli_real_escape_string($conn, $category) . "'";
+    $conditions[] = "o.product_type = '" . mysqli_real_escape_string($conn, $category) . "'";
 }
+if ($view === 'approved') {
+    $conditions[] = "o.status = 'approved'";
+} else {
+    $conditions[] = "o.status != 'approved'";
+}
+$where = count($conditions) > 0 ? "WHERE " . implode(" AND ", $conditions) : "";
 
 $orderBy = "o.id DESC";
 if ($sort === 'oldest') $orderBy = "o.id ASC";
-if ($sort === 'status') $orderBy = "o.status ASC, o.id DESC";
-if ($sort === 'type') $orderBy = "o.product_type ASC, o.id DESC";
+
+$countSql = "SELECT COUNT(*) AS total FROM orders o $where";
+$countResult = mysqli_query($conn, $countSql);
+$totalRow = mysqli_fetch_assoc($countResult);
+$totalRecords = $totalRow['total'];
+
+$limit = 10;
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
+$totalPages = max(1, ceil($totalRecords / $limit));
+if ($page > $totalPages) $page = $totalPages;
+$offset = ($page - 1) * $limit;
 
 $sql = "SELECT o.*, c.full_name, c.username, c.email, c.phone, c.address
         FROM orders o
         LEFT JOIN clients c ON o.client_id = c.id
         $where
-        ORDER BY $orderBy";
+        ORDER BY $orderBy
+        LIMIT $limit OFFSET $offset";
 
 $result = mysqli_query($conn, $sql);
 $orders = [];
@@ -44,371 +66,598 @@ if ($result) {
         $orders[] = $row;
     }
 }
+
+function buildQuery($params) {
+    $current = $_GET;
+    foreach ($params as $key => $value) {
+        $current[$key] = $value;
+    }
+    return '?' . http_build_query($current);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Orders — Staff Panel</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="../font/css/all.min.css">
-    <link rel="stylesheet" href="staff.css">
-    <style>
-        .orders-topbar {
-            display: flex;
-            align-items: flex-end;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 14px;
-            margin-bottom: 22px;
-        }
+<meta charset="UTF-8">
+<title>Orders | JD Printing Services</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="../font/css/all.min.css">
+<link rel="stylesheet" href="staff.css">
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
 
-        .orders-filters {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 18px;
-        }
+body {
+    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+    background-color: #f0f1f3;
+    color: #26292f;
+    font-size: 13px;
+}
 
-        .filter-tab {
-            font-size: 12.5px;
-            font-weight: 600;
-            color: #5b5f66;
-            background: #ffffff;
-            border: 1px solid #e4e6ea;
-            border-radius: 30px;
-            padding: 8px 16px;
-            text-decoration: none;
-            display: inline-block;
-        }
+.staff-wrapper {
+    display: flex;
+    min-height: 100vh;
+}
 
-        .filter-tab.active {
-            background: #14161b;
-            border-color: #14161b;
-            color: #ffffff;
-        }
+.staff-content {
+    flex: 1;
+    padding: 24px 28px;
+}
 
-        .sort-select {
-            padding: 9px 14px;
-            border: 1px solid #e4e6ea;
-            border-radius: 8px;
-            font-size: 12.5px;
-            font-family: Arial, Helvetica, sans-serif;
-            background: #ffffff;
-            color: #333333;
-        }
+.page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #d6d9de;
+    flex-wrap: wrap;
+    gap: 12px;
+}
 
-        .orders-table-wrap {
-            background: #ffffff;
-            border-radius: 10px;
-            border: 1px solid #e9eaee;
-            overflow: hidden;
-        }
+.page-header-text h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1c2027;
+}
 
-        .orders-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
+.breadcrumb {
+    font-size: 12px;
+    color: #7a8089;
+    margin-top: 3px;
+}
 
-        .orders-table th {
-            text-align: left;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            color: #9a9ea6;
-            padding: 12px 16px;
-            border-bottom: 1px solid #e9eaee;
-            background: #fafbfc;
-        }
+.breadcrumb span {
+    color: #4c5b76;
+}
 
-        .orders-table td {
-            padding: 13px 16px;
-            font-size: 13.5px;
-            border-bottom: 1px solid #f1f2f5;
-            vertical-align: middle;
-        }
+.sort-select {
+    padding: 7px 12px;
+    border: 1px solid #c9ccd2;
+    border-radius: 3px;
+    font-size: 12.5px;
+    font-family: inherit;
+    background-color: #fbfbfc;
+    color: #26292f;
+    cursor: pointer;
+}
 
-        .orders-table tr:last-child td {
-            border-bottom: none;
-        }
+.sort-select:focus {
+    outline: none;
+    border-color: #3a6ea5;
+}
 
-        .orders-table tr {
-            transition: background-color 0.12s ease;
-        }
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    background-color: #33475a;
+    color: #ffffff;
+    border: 1px solid #33475a;
+    border-radius: 3px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+}
 
-        .orders-table tbody tr:hover {
-            background-color: #fafbfc;
-        }
+.btn-primary:hover {
+    background-color: #263748;
+}
 
-        .order-row {
-            cursor: pointer;
-        }
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    background-color: #ffffff;
+    color: #4c5560;
+    border: 1px solid #c9ccd2;
+    border-radius: 3px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+}
 
-        .order-customer strong {
-            display: block;
-            font-size: 13.5px;
-        }
+.btn-secondary:hover {
+    background-color: #f5f6f8;
+}
 
-        .order-customer span {
-            font-size: 12px;
-            color: #9a9ea6;
-        }
+.filter-tabs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
 
-        .order-product-tag {
-            display: inline-block;
-            font-size: 10.5px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-            padding: 3px 9px;
-            border-radius: 20px;
-            background: #f1f2f5;
-            color: #52565e;
-        }
+.filter-tabs .sort-select {
+    margin-left: auto;
+}
 
-        .order-date {
-            font-size: 12.5px;
-            color: #7d818a;
-        }
+.filter-tab {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4c5560;
+    background-color: #ffffff;
+    border: 1px solid #c9ccd2;
+    border-radius: 3px;
+    padding: 7px 14px;
+    text-decoration: none;
+}
 
-        .status-pill {
-            font-size: 10.5px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-            padding: 4px 10px;
-            border-radius: 20px;
-            display: inline-block;
-        }
+.filter-tab:hover {
+    border-color: #3a6ea5;
+    color: #3a6ea5;
+}
 
-        .status-pill.status-pending {
-            background: #f1f2f5;
-            color: #6b6f76;
-        }
+.filter-tab.active {
+    background-color: #33475a;
+    border-color: #33475a;
+    color: #ffffff;
+}
 
-        .status-pill.status-quoted {
-            background: #fff0ea;
-            color: #ff4a1c;
-        }
+.data-panel {
+    background-color: #ffffff;
+    border: 1px solid #d6d9de;
+    border-radius: 3px;
+}
 
-        .status-pill.status-approved {
-            background: #14161b;
-            color: #ffffff;
-        }
+.data-panel-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e4e6ea;
+    gap: 12px;
+    flex-wrap: wrap;
+}
 
-        .orders-empty {
-            text-align: center;
-            padding: 50px 20px;
-            color: #9a9ea6;
-        }
+.data-panel-toolbar h2 {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #1c2027;
+}
 
-        .order-modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #ffffff;
-            z-index: 300;
-            align-items: stretch;
-            justify-content: stretch;
-            padding: 0;
-        }
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
 
-        .order-modal-overlay.active {
-            display: flex;
-        }
+.record-count {
+    font-size: 12px;
+    color: #7a8089;
+    white-space: nowrap;
+}
 
-        .order-modal {
-            background: #ffffff;
-            border-radius: 0;
-            width: 100%;
-            max-width: 100%;
-            height: 100%;
-            max-height: 100%;
-            overflow-y: auto;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+.search-box {
+    position: relative;
+    width: 220px;
+}
 
-        .order-modal-body {
-            max-width: 1100px;
-            margin: 0 auto;
-            padding: 32px 28px;
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 28px;
-        }
+.search-box i {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: #9099a3;
+}
 
-        .order-modal-close {
-            position: absolute;
-            top: 18px;
-            right: 20px;
-            border: none;
-            background: none;
-            font-size: 15px;
-            color: #9a9ea6;
-            cursor: pointer;
-            z-index: 2;
-        }
+.search-box input {
+    width: 100%;
+    padding: 6px 10px 6px 28px;
+    border: 1px solid #c9ccd2;
+    border-radius: 3px;
+    font-size: 12.5px;
+    font-family: inherit;
+    background-color: #fbfbfc;
+}
 
-        .order-modal-close:hover {
-            color: #14161b;
-        }
+.search-box input:focus {
+    outline: none;
+    border-color: #3a6ea5;
+    background-color: #ffffff;
+}
 
-        .order-modal-section h3 {
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            color: #9a9ea6;
-            margin-bottom: 12px;
-        }
+table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
 
-        .order-modal-image {
-            width: 220px;
-            aspect-ratio: 1 / 1;
-            border-radius: 8px;
-            border: 1px solid #e9eaee;
-            background: #fafbfc;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            margin-bottom: 12px;
-        }
+.data-table thead th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #5c6470;
+    padding: 9px 16px;
+    background-color: #f5f6f8;
+    border-bottom: 1px solid #d6d9de;
+    border-top: 1px solid #d6d9de;
+    white-space: nowrap;
+}
 
-        .order-modal-image img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
+.data-table tbody td {
+    padding: 10px 16px;
+    border-bottom: 1px solid #edeef1;
+    color: #2c313b;
+    vertical-align: middle;
+}
 
-        .order-modal-image i {
-            font-size: 26px;
-            color: #c5c8ce;
-        }
+.data-table tbody tr {
+    cursor: pointer;
+}
 
-        .image-download-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            padding: 8px 14px;
-            border: 1px solid #e4e6ea;
-            border-radius: 7px;
-            background: #ffffff;
-            color: #52565e;
-            font-size: 12px;
-            font-weight: 600;
-            text-decoration: none;
-            margin-bottom: 20px;
-        }
+.data-table tbody tr:hover {
+    background-color: #f7f8fa;
+}
 
-        .image-download-btn:hover {
-            border-color: #14161b;
-            color: #14161b;
-        }
+.data-table tbody tr:last-child td {
+    border-bottom: none;
+}
 
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 9px 0;
-            border-bottom: 1px solid #f1f2f5;
-            font-size: 13px;
-        }
+.cell-name {
+    font-weight: 600;
+    color: #1c2027;
+}
 
-        .info-row:last-child {
-            border-bottom: none;
-        }
+.cell-sub {
+    font-size: 11.5px;
+    color: #9099a3;
+    margin-top: 1px;
+}
 
-        .info-row span:first-child {
-            color: #9a9ea6;
-        }
+.cell-muted {
+    color: #6b7280;
+}
 
-        .info-row span:last-child {
-            font-weight: 600;
-            text-align: right;
-        }
+.product-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 3px;
+    background-color: #eef1f6;
+    color: #3f4b5c;
+}
 
-        .order-modal-notes {
-            margin-top: 16px;
-            padding: 12px 14px;
-            background: #fafbfc;
-            border: 1px solid #f1f2f5;
-            border-radius: 8px;
-            font-size: 12.5px;
-            color: #52565e;
-        }
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
 
-        .order-modal-quote {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #f1f2f5;
-        }
+.status-badge.status-pending {
+    background-color: #f0f1f3;
+    color: #5c6470;
+}
 
-        .order-modal-quote-existing {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 14px 16px;
-            background: #fafbfc;
-            border-radius: 8px;
-        }
+.status-badge.status-quoted {
+    background-color: #fbf1e0;
+    color: #966a1f;
+}
 
-        .order-modal-quote-existing span {
-            font-size: 12px;
-            color: #9a9ea6;
-            display: block;
-            margin-bottom: 4px;
-        }
+.status-badge.status-approved {
+    background-color: #e5f2ea;
+    color: #2f6b45;
+}
 
-        .order-modal-quote-existing strong {
-            font-size: 20px;
-        }
+.empty-state {
+    text-align: center;
+    padding: 46px 16px;
+    color: #9099a3;
+    font-size: 13px;
+}
 
-        .modal-quote-form {
-            display: flex;
-            gap: 10px;
-        }
+.pagination-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-top: 1px solid #e4e6ea;
+    font-size: 12px;
+    color: #7a8089;
+    flex-wrap: wrap;
+    gap: 10px;
+}
 
-        .modal-quote-form input {
-            flex: 1;
-            padding: 11px 13px;
-            border: 1px solid #dcdfe4;
-            border-radius: 8px;
-            font-size: 14px;
-            font-family: Arial, Helvetica, sans-serif;
-        }
+.pagination-links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
 
-        .modal-quote-form input:focus {
-            outline: none;
-            border-color: #14161b;
-        }
+.pagination-links a,
+.pagination-links span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid #d6d9de;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #3a6ea5;
+    text-decoration: none;
+    background-color: #ffffff;
+}
 
-        .modal-quote-form button {
-            padding: 11px 20px;
-            background: #14161b;
-            color: #ffffff;
-            border: none;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-        }
+.pagination-links a:hover {
+    background-color: #f0f4fa;
+    border-color: #3a6ea5;
+}
 
-        .modal-quote-form button:hover {
-            background: #ff4a1c;
-        }
+.pagination-links span.active {
+    background-color: #33475a;
+    border-color: #33475a;
+    color: #ffffff;
+}
 
-        @media (max-width: 640px) {
-            .order-modal-body {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+.pagination-links span.disabled {
+    color: #b0b8c4;
+    border-color: #e4e6ea;
+    background-color: #f9f9fa;
+}
+
+.order-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(20, 24, 30, 0.45);
+    z-index: 300;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 40px;
+    overflow-y: auto;
+}
+
+.order-modal-overlay.active {
+    display: flex;
+}
+
+.order-modal {
+    background-color: #ffffff;
+    border-radius: 3px;
+    width: 940px;
+    max-width: 94%;
+    border: 1px solid #c9ccd2;
+    margin-bottom: 40px;
+}
+
+.order-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    background-color: #f5f6f8;
+    border-bottom: 1px solid #d6d9de;
+}
+
+.order-modal-header h2 {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: #1c2027;
+}
+
+.order-modal-close {
+    border: none;
+    background: none;
+    font-size: 14px;
+    color: #7a8089;
+    cursor: pointer;
+}
+
+.order-modal-close:hover {
+    color: #a3402a;
+}
+
+.order-modal-body {
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+}
+
+.order-modal-section h3 {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #3a6ea5;
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #e4e6ea;
+}
+
+.order-modal-image {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 3px;
+    border: 1px solid #d6d9de;
+    background-color: #fbfbfc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.order-modal-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.order-modal-image i {
+    font-size: 24px;
+    color: #c9ccd2;
+}
+
+.image-download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    border: 1px solid #c9ccd2;
+    border-radius: 3px;
+    background-color: #ffffff;
+    color: #4c5560;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.image-download-btn:hover {
+    background-color: #f5f6f8;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #edeef1;
+    font-size: 12.5px;
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-row span:first-child {
+    color: #7a8089;
+}
+
+.info-row span:last-child {
+    font-weight: 600;
+    text-align: right;
+    color: #26292f;
+}
+
+.order-modal-notes {
+    margin-top: 14px;
+    padding: 10px 12px;
+    background-color: #fbfbfc;
+    border: 1px solid #edeef1;
+    border-radius: 3px;
+    font-size: 12px;
+    color: #4c5560;
+}
+
+.order-modal-quote {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid #edeef1;
+}
+
+.order-modal-quote-existing {
+    padding: 12px 14px;
+    background-color: #fbfbfc;
+    border: 1px solid #edeef1;
+    border-radius: 3px;
+}
+
+.order-modal-quote-existing span {
+    font-size: 11.5px;
+    color: #7a8089;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.order-modal-quote-existing strong {
+    font-size: 18px;
+    color: #1c2027;
+}
+
+.modal-quote-form {
+    display: flex;
+    gap: 8px;
+}
+
+.modal-quote-form input {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid #c9ccd2;
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.modal-quote-form input:focus {
+    outline: none;
+    border-color: #3a6ea5;
+}
+
+.modal-quote-form button {
+    padding: 8px 16px;
+    background-color: #33475a;
+    color: #ffffff;
+    border: 1px solid #33475a;
+    border-radius: 3px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.modal-quote-form button:hover {
+    background-color: #263748;
+}
+
+@media (max-width: 700px) {
+    .order-modal-body {
+        grid-template-columns: 1fr;
+    }
+
+    .data-table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .pagination-bar {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+}
+</style>
 </head>
 <body>
 
@@ -417,28 +666,35 @@ if ($result) {
     <?php include 'sidebar.php'; ?>
 
     <div class="staff-content">
-        <div class="orders-topbar">
-            <div>
-                <h1>Orders</h1>
-                <p>Review customer orders and provide quotations.</p>
+        <div class="page-header">
+            <div class="page-header-text">
+                <h1><?php echo $view === 'approved' ? 'Approved Orders' : 'Orders'; ?></h1>
+                <div class="breadcrumb">Staff Panel <span>/ Orders <?php echo $view === 'approved' ? '/ Approved' : ''; ?></span></div>
+            </div>
+        </div>
+
+        <div class="filter-tabs">
+            <a href="<?php echo htmlspecialchars(buildQuery(['category' => 'all', 'page' => 1])); ?>" class="filter-tab <?php echo $category === 'all' ? 'active' : ''; ?>">All</a>
+            <a href="<?php echo htmlspecialchars(buildQuery(['category' => 'Tarpaulin', 'page' => 1])); ?>" class="filter-tab <?php echo $category === 'Tarpaulin' ? 'active' : ''; ?>">Tarpaulin</a>
+            <a href="<?php echo htmlspecialchars(buildQuery(['category' => 'Sticker', 'page' => 1])); ?>" class="filter-tab <?php echo $category === 'Sticker' ? 'active' : ''; ?>">Sticker</a>
+            <select class="sort-select" onchange="window.location.href = this.value">
+                <option value="<?php echo htmlspecialchars(buildQuery(['sort' => 'newest', 'view' => 'active', 'page' => 1])); ?>" <?php echo ($sort === 'newest' && $view === 'active') ? 'selected' : ''; ?>>Newest First</option>
+                <option value="<?php echo htmlspecialchars(buildQuery(['sort' => 'oldest', 'view' => 'active', 'page' => 1])); ?>" <?php echo ($sort === 'oldest' && $view === 'active') ? 'selected' : ''; ?>>Oldest First</option>
+                <option value="<?php echo htmlspecialchars(buildQuery(['view' => 'approved', 'page' => 1])); ?>" <?php echo $view === 'approved' ? 'selected' : ''; ?>>Approved List</option>
+            </select>
+        </div>        <div class="data-panel">
+            <div class="data-panel-toolbar">
+                <h2>Order List</h2>
+                <div class="toolbar-right">
+                    <span class="record-count"><?php echo $totalRecords; ?> total records</span>
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="orderSearch" placeholder="Search records" onkeyup="filterOrderTable()">
+                    </div>
+                </div>
             </div>
 
-            <select class="sort-select" onchange="window.location.href = updateParam('sort', this.value)">
-                <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest First</option>
-                <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
-                <option value="status" <?php echo $sort === 'status' ? 'selected' : ''; ?>>Sort by Status</option>
-                <option value="type" <?php echo $sort === 'type' ? 'selected' : ''; ?>>Sort by Product Type</option>
-            </select>
-        </div>
-
-        <div class="orders-filters">
-            <a href="?category=all&sort=<?php echo $sort; ?>" class="filter-tab <?php echo $category === 'all' ? 'active' : ''; ?>">All</a>
-            <a href="?category=Tarpaulin&sort=<?php echo $sort; ?>" class="filter-tab <?php echo $category === 'Tarpaulin' ? 'active' : ''; ?>">Tarpaulin</a>
-            <a href="?category=Sticker&sort=<?php echo $sort; ?>" class="filter-tab <?php echo $category === 'Sticker' ? 'active' : ''; ?>">Sticker</a>
-        </div>
-
-        <div class="orders-table-wrap">
-            <table class="orders-table">
+            <table class="data-table" id="orderTable">
                 <thead>
                     <tr>
                         <th>Customer</th>
@@ -450,19 +706,16 @@ if ($result) {
                 <tbody>
                     <?php if (count($orders) === 0) { ?>
                         <tr>
-                            <td colspan="4" class="orders-empty">No orders found.</td>
+                            <td colspan="4">
+                                <div class="empty-state">No orders found.</div>
+                            </td>
                         </tr>
                     <?php } ?>
                     <?php foreach ($orders as $order) { ?>
                         <?php
-                            $specs = htmlspecialchars($order['width']) . ' x ' . htmlspecialchars($order['height']);
-                            if (!empty($order['shape'])) {
-                                $specs .= ' - ' . htmlspecialchars(ucfirst($order['shape']));
-                            }
-                            $specs .= ' - Qty ' . htmlspecialchars($order['quantity']);
                             $imagePath = !empty($order['design_file']) ? '../assets/uploads/designs/' . htmlspecialchars($order['design_file'], ENT_QUOTES) : '';
                         ?>
-                        <tr class="order-row" onclick='openOrderModal(<?php echo json_encode([
+                        <tr onclick='openOrderModal(<?php echo json_encode([
                                     "id" => $order["id"],
                                     "product_type" => $order["product_type"],
                                     "full_name" => $order["full_name"] ?? "Unknown",
@@ -476,21 +729,66 @@ if ($result) {
                                     "quantity" => $order["quantity"],
                                     "notes" => $order["notes"],
                                     "status" => $order["status"],
+                                    "fulfillment_method" => $order["fulfillment_method"],
                                     "quoted_price" => $order["quoted_price"],
                                     "date_ordered" => date("M d, Y g:i A", strtotime($order["date_ordered"])),
                                     "image" => $imagePath
                                 ], JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
-                            <td class="order-customer">
-                                <strong><?php echo htmlspecialchars($order['full_name'] ?? 'Unknown'); ?></strong>
-                                <span>@<?php echo htmlspecialchars($order['username'] ?? ''); ?></span>
+                            <td>
+                                <div class="cell-name"><?php echo htmlspecialchars($order['full_name'] ?? 'Unknown'); ?></div>
+                                <div class="cell-sub">@<?php echo htmlspecialchars($order['username'] ?? ''); ?></div>
                             </td>
-                            <td><span class="order-product-tag"><?php echo htmlspecialchars($order['product_type']); ?></span></td>
-                            <td><span class="order-date"><?php echo htmlspecialchars(date('M d, Y', strtotime($order['date_ordered']))); ?></span></td>
-                            <td><span class="status-pill status-<?php echo htmlspecialchars($order['status']); ?>"><?php echo htmlspecialchars(ucfirst($order['status'])); ?></span></td>
+                            <td><span class="product-tag"><?php echo htmlspecialchars($order['product_type']); ?></span></td>
+                            <td class="cell-muted"><?php echo htmlspecialchars(date('M d, Y', strtotime($order['date_ordered']))); ?></td>
+                            <td><span class="status-badge status-<?php echo htmlspecialchars($order['status']); ?>"><?php echo htmlspecialchars(ucfirst($order['status'])); ?></span></td>
                         </tr>
                     <?php } ?>
                 </tbody>
             </table>
+
+            <div class="pagination-bar">
+                <span class="pagination-info">
+                    Showing <?php echo count($orders) > 0 ? $offset + 1 : 0; ?>
+                    to <?php echo min($offset + $limit, $totalRecords); ?>
+                    of <?php echo $totalRecords; ?> records
+                </span>
+                <div class="pagination-links">
+                    <?php if ($page > 1) { ?>
+                        <a href="<?php echo htmlspecialchars(buildQuery(['page' => $page - 1])); ?>">&laquo;</a>
+                    <?php } else { ?>
+                        <span class="disabled">&laquo;</span>
+                    <?php } ?>
+
+                    <?php
+                    $startPage = max(1, $page - 2);
+                    $endPage = min($totalPages, $page + 2);
+
+                    if ($startPage > 1) {
+                        echo '<a href="' . htmlspecialchars(buildQuery(['page' => 1])) . '">1</a>';
+                        if ($startPage > 2) echo '<span class="disabled">...</span>';
+                    }
+
+                    for ($i = $startPage; $i <= $endPage; $i++) {
+                        if ($i == $page) {
+                            echo '<span class="active">' . $i . '</span>';
+                        } else {
+                            echo '<a href="' . htmlspecialchars(buildQuery(['page' => $i])) . '">' . $i . '</a>';
+                        }
+                    }
+
+                    if ($endPage < $totalPages) {
+                        if ($endPage < $totalPages - 1) echo '<span class="disabled">...</span>';
+                        echo '<a href="' . htmlspecialchars(buildQuery(['page' => $totalPages])) . '">' . $totalPages . '</a>';
+                    }
+                    ?>
+
+                    <?php if ($page < $totalPages) { ?>
+                        <a href="<?php echo htmlspecialchars(buildQuery(['page' => $page + 1])); ?>">&raquo;</a>
+                    <?php } else { ?>
+                        <span class="disabled">&raquo;</span>
+                    <?php } ?>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -498,7 +796,10 @@ if ($result) {
 
 <div class="order-modal-overlay" id="orderModal">
     <div class="order-modal">
-        <button type="button" class="order-modal-close" onclick="closeOrderModal()"><i class="fa-solid fa-xmark"></i></button>
+        <div class="order-modal-header">
+            <h2>Order Details</h2>
+            <button type="button" class="order-modal-close" onclick="closeOrderModal()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
 
         <div class="order-modal-body">
             <div class="order-modal-section">
@@ -514,6 +815,7 @@ if ($result) {
                 <div class="info-row"><span>Size</span><span id="modalSize"></span></div>
                 <div class="info-row" id="modalShapeRow"><span>Shape</span><span id="modalShape"></span></div>
                 <div class="info-row"><span>Quantity</span><span id="modalQuantity"></span></div>
+                <div class="info-row"><span>Fulfillment</span><span id="modalFulfillment"></span></div>
                 <div class="info-row"><span>Date Ordered</span><span id="modalDate"></span></div>
                 <div class="info-row"><span>Status</span><span id="modalStatus"></span></div>
 
@@ -553,6 +855,7 @@ function openOrderModal(order) {
 
     document.getElementById('modalSize').textContent = order.width + ' x ' + order.height;
     document.getElementById('modalQuantity').textContent = order.quantity;
+    document.getElementById('modalFulfillment').textContent = order.fulfillment_method ? (order.fulfillment_method.charAt(0).toUpperCase() + order.fulfillment_method.slice(1)) : '\u2014';
     document.getElementById('modalDate').textContent = order.date_ordered;
     document.getElementById('modalStatus').textContent = order.status.charAt(0).toUpperCase() + order.status.slice(1);
 
@@ -589,7 +892,7 @@ function openOrderModal(order) {
     } else if (order.quoted_price) {
         quoteArea.innerHTML =
             '<div class="order-modal-quote-existing">' +
-                '<div><span>Quoted Price</span><strong>\u20b1' + parseFloat(order.quoted_price).toLocaleString(undefined, {minimumFractionDigits: 2}) + '</strong></div>' +
+                '<span>Quoted Price</span><strong>\u20b1' + parseFloat(order.quoted_price).toLocaleString(undefined, {minimumFractionDigits: 2}) + '</strong>' +
             '</div>';
     } else {
         quoteArea.innerHTML = '<div class="order-modal-quote-existing"><span>No quotation yet.</span></div>';
@@ -608,10 +911,13 @@ window.addEventListener('click', function (e) {
     }
 });
 
-function updateParam(key, value) {
-    var url = new URL(window.location.href);
-    url.searchParams.set(key, value);
-    return url.toString();
+function filterOrderTable() {
+    var query = document.getElementById('orderSearch').value.toLowerCase();
+    var rows = document.querySelectorAll('#orderTable tbody tr');
+    rows.forEach(function (row) {
+        var text = row.textContent.toLowerCase();
+        row.style.display = text.indexOf(query) !== -1 ? '' : 'none';
+    });
 }
 </script>
 
