@@ -20,27 +20,54 @@ while ($row = mysqli_fetch_assoc($result)) {
 }
 
 $statusMeta = [
-    'pending'  => [
+    'pending'   => [
         'label' => 'Pending',
         'ink'   => 'ink-amber',
         'icon'  => 'fa-clock',
         'note'  => 'Waiting for quotation from our team.',
     ],
-    'quoted'   => [
+    'quoted'    => [
         'label' => 'Quoted',
         'ink'   => 'ink-blue',
         'icon'  => 'fa-hourglass-half',
         'note'  => 'Awaiting your confirmation before delivery can be scheduled.',
     ],
-    'approved' => [
+    'approved'  => [
         'label' => 'Dispatch',
         'ink'   => 'ink-green',
         'icon'  => 'fa-truck',
         'note'  => 'Confirmed. Our team will coordinate the delivery schedule with you.',
     ],
+    'preparing' => [
+        'label' => 'Preparing',
+        'ink'   => 'ink-green',
+        'icon'  => 'fa-box-open',
+        'note'  => 'Your order is being prepared for dispatch.',
+    ],
 ];
 
-$counts = ['all' => count($deliveries), 'pending' => 0, 'quoted' => 0, 'approved' => 0];
+$deliveryStatusMeta = [
+    'preparing'  => [
+        'label' => 'Preparing',
+        'ink'   => 'ink-green',
+        'icon'  => 'fa-box-open',
+        'note'  => 'Your order is being prepared for dispatch.',
+    ],
+    'in_transit' => [
+        'label' => 'In Transit',
+        'ink'   => 'ink-blue',
+        'icon'  => 'fa-truck-fast',
+        'note'  => 'On its way to your address.',
+    ],
+    'completed'  => [
+        'label' => 'Delivered',
+        'ink'   => 'ink-green',
+        'icon'  => 'fa-circle-check',
+        'note'  => 'Delivery completed. Thank you for ordering with us!',
+    ],
+];
+
+$counts = ['all' => count($deliveries), 'pending' => 0, 'quoted' => 0, 'approved' => 0, 'preparing' => 0];
 foreach ($deliveries as $d) {
     if (isset($counts[$d['status']])) {
         $counts[$d['status']]++;
@@ -396,7 +423,8 @@ foreach ($deliveries as $d) {
                 <button type="button" class="active" data-filter="all">All (<?php echo $counts['all']; ?>)</button>
                 <button type="button" data-filter="pending">Pending (<?php echo $counts['pending']; ?>)</button>
                 <button type="button" data-filter="quoted">Quoted (<?php echo $counts['quoted']; ?>)</button>
-                <button type="button" data-filter="approved">Dispatch (<?php echo $counts['approved']; ?>)</button>
+                <button type="button" data-filter="approved">Approved (<?php echo $counts['approved']; ?>)</button>
+                <button type="button" data-filter="preparing">Preparing (<?php echo $counts['preparing']; ?>)</button>
             </div>
         <?php } ?>
 
@@ -412,6 +440,12 @@ foreach ($deliveries as $d) {
                     $status = $order['status'];
                     $meta = $statusMeta[$status] ?? $statusMeta['pending'];
                     $refCode = 'JD-' . str_pad($order['id'], 5, '0', STR_PAD_LEFT);
+
+                    // Once an order is being prepared, show live dispatch progress
+                    // driven by delivery_status instead of the base order status.
+                    if ($status === 'preparing' && !empty($order['delivery_status']) && isset($deliveryStatusMeta[$order['delivery_status']])) {
+                        $meta = $deliveryStatusMeta[$order['delivery_status']];
+                    }
                 ?>
                     <div class="ticket" data-status="<?php echo htmlspecialchars($status); ?>">
                         <div class="ticket-stub">

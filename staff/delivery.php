@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_delivery_status
 $sql = "SELECT o.*, c.full_name, c.username, c.phone, c.address
         FROM orders o
         LEFT JOIN clients c ON o.client_id = c.id
-        WHERE o.fulfillment_method = 'delivery' AND o.status = 'approved'
+        WHERE o.fulfillment_method = 'delivery' AND o.status IN ('approved', 'preparing')
         ORDER BY o.id DESC";
 
 $result = mysqli_query($conn, $sql);
