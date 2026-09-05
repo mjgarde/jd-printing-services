@@ -2,40 +2,28 @@
 session_start();
 require_once '../../config/db.php';
 
-function showAlert($message, $redirect = 'my_orders.php') {
-    echo "<script>alert('" . addslashes($message) . "'); window.location.href='" . $redirect . "';</script>";
-    exit();
-}
-
 if (!isset($_SESSION['client_id'])) {
-    showAlert('Please login first.', '../index.php');
-}
-
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_submit'])) {
-    $client_id = $_SESSION['client_id'];
-    $order_id = mysqli_real_escape_string($conn, $_POST['order_id']);
-
-    $check = mysqli_query($conn, "SELECT id, status FROM orders WHERE id = '$order_id' AND client_id = '$client_id'");
-
-    if (!$check || mysqli_num_rows($check) === 0) {
-        showAlert('Order not found.');
-    }
-
-    $order = mysqli_fetch_assoc($check);
-
-    if ($order['status'] !== 'quoted') {
-        showAlert('This order cannot be confirmed right now.');
-    }
-
-    $sql = "UPDATE orders SET status = 'approved' WHERE id = '$order_id' AND client_id = '$client_id'";
-
-    if (mysqli_query($conn, $sql)) {
-        showAlert('Order confirmed! Production will begin shortly.');
-    } else {
-        showAlert('Database error. Please try again.');
-    }
-} else {
-    header("Location: my_orders.php");
+    header("Location: ../index.php");
     exit();
 }
-?>
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_submit'])) {
+    $order_id = (int) $_POST['order_id'];
+    $client_id = $_SESSION['client_id'];
+
+    $stmt = mysqli_prepare($conn, "SELECT fulfillment_method FROM orders WHERE id = ? AND client_id = ? AND status = 'quoted'");
+    mysqli_stmt_bind_param($stmt, "ii", $order_id, $client_id);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $order = mysqli_fetch_assoc($result);
+
+    if ($order) {
+        $newStatus = $order['fulfillment_method'] === 'delivery' ? 'approved' : 'waiting';
+        $update = mysqli_prepare($conn, "UPDATE orders SET status = ? WHERE id = ? AND client_id = ?");
+        mysqli_stmt_bind_param($update, "sii", $newStatus, $order_id, $client_id);
+        mysqli_stmt_execute($update);
+    }
+}
+
+header("Location: my_orders.php");
+exit();

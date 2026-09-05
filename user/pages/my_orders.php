@@ -20,15 +20,24 @@ while ($row = mysqli_fetch_assoc($result)) {
 }
 
 $statusMeta = [
-    'pending'  => ['label' => 'Pending',   'ink' => 'ink-amber'],
-    'quoted'   => ['label' => 'Quoted',    'ink' => 'ink-blue'],
-    'approved' => ['label' => 'Confirmed', 'ink' => 'ink-green'],
+    'pending'   => ['label' => 'Pending',        'ink' => 'ink-amber'],
+    'quoted'    => ['label' => 'Quoted',         'ink' => 'ink-blue'],
+    'waiting'   => ['label' => 'Ready for Pickup', 'ink' => 'ink-blue'],
+    'approved'  => ['label' => 'In Production',  'ink' => 'ink-blue'],
+    'preparing' => ['label' => 'Preparing for Delivery', 'ink' => 'ink-blue'],
+    'confirmed' => ['label' => 'Completed',      'ink' => 'ink-green'],
 ];
 
-$counts = ['all' => count($orders), 'pending' => 0, 'quoted' => 0, 'approved' => 0];
+$counts = ['all' => count($orders), 'pending' => 0, 'quoted' => 0, 'active' => 0, 'confirmed' => 0];
 foreach ($orders as $o) {
-    if (isset($counts[$o['status']])) {
-        $counts[$o['status']]++;
+    if ($o['status'] === 'pending') {
+        $counts['pending']++;
+    } elseif ($o['status'] === 'quoted') {
+        $counts['quoted']++;
+    } elseif ($o['status'] === 'confirmed') {
+        $counts['confirmed']++;
+    } elseif (in_array($o['status'], ['waiting', 'approved', 'preparing'])) {
+        $counts['active']++;
     }
 }
 ?>
@@ -434,7 +443,8 @@ foreach ($orders as $o) {
                 <button type="button" class="active" data-filter="all">All (<?php echo $counts['all']; ?>)</button>
                 <button type="button" data-filter="pending">Pending (<?php echo $counts['pending']; ?>)</button>
                 <button type="button" data-filter="quoted">Quoted (<?php echo $counts['quoted']; ?>)</button>
-                <button type="button" data-filter="approved">Confirmed (<?php echo $counts['approved']; ?>)</button>
+                <button type="button" data-filter="active">In Progress (<?php echo $counts['active']; ?>)</button>
+                <button type="button" data-filter="confirmed">Completed (<?php echo $counts['confirmed']; ?>)</button>
             </div>
         <?php } ?>
 
@@ -451,8 +461,9 @@ foreach ($orders as $o) {
                     $meta = $statusMeta[$status] ?? ['label' => ucfirst($status), 'ink' => 'ink-amber'];
                     $fulfillmentLabel = $order['fulfillment_method'] === 'delivery' ? 'Delivery' : 'Pick-up';
                     $refCode = 'JD-' . str_pad($order['id'], 5, '0', STR_PAD_LEFT);
+                    $filterGroup = in_array($status, ['waiting', 'approved', 'preparing']) ? 'active' : $status;
                 ?>
-                    <div class="ticket" data-status="<?php echo htmlspecialchars($status); ?>">
+                    <div class="ticket" data-status="<?php echo htmlspecialchars($filterGroup); ?>">
                         <div class="ticket-stub">
                             <div class="ticket-thumb">
                                 <?php if (!empty($order['design_file'])) { ?>
@@ -500,9 +511,17 @@ foreach ($orders as $o) {
                                 <div class="ticket-action">
                                     <span class="ticket-waiting"><i class="fa-solid fa-clock"></i> Awaiting staff review</span>
                                 </div>
-                            <?php } elseif ($status === 'approved') { ?>
+                            <?php } elseif ($status === 'waiting') { ?>
+                                <div class="ticket-action">
+                                    <span class="ticket-waiting"><i class="fa-solid fa-store"></i> Ready — visit the shop to pick up and pay</span>
+                                </div>
+                            <?php } elseif ($status === 'approved' || $status === 'preparing') { ?>
                                 <div class="ticket-action">
                                     <span class="ticket-waiting"><i class="fa-solid fa-industry"></i> In production</span>
+                                </div>
+                            <?php } elseif ($status === 'confirmed') { ?>
+                                <div class="ticket-action">
+                                    <span class="ticket-waiting"><i class="fa-solid fa-check"></i> Order completed</span>
                                 </div>
                             <?php } ?>
                         </div>

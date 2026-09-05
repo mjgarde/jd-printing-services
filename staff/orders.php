@@ -22,8 +22,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['quote_submit'])) {
     exit();
 }
 
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['approve_submit'])) {
+    $order_id = (int) $_POST['order_id'];
+
+    $stmt = mysqli_prepare($conn, "UPDATE orders SET status = 'approved' WHERE id = ? AND status = 'quoted'");
+    mysqli_stmt_bind_param($stmt, "i", $order_id);
+    mysqli_stmt_execute($stmt);
+    mysqli_stmt_close($stmt);
+
+    header("Location: orders.php?view=approved");
+    exit();
+}
+
 $category = isset($_GET['category']) ? $_GET['category'] : 'all';
 $sort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
+
 $view = isset($_GET['view']) && $_GET['view'] === 'approved' ? 'approved' : 'active';
 
 $conditions = [];
@@ -33,7 +46,7 @@ if ($category === 'Tarpaulin' || $category === 'Sticker') {
 if ($view === 'approved') {
     $conditions[] = "o.status = 'approved'";
 } else {
-    $conditions[] = "o.status != 'approved'";
+    $conditions[] = "o.status NOT IN ('approved', 'preparing')";
 }
 $where = count($conditions) > 0 ? "WHERE " . implode(" AND ", $conditions) : "";
 
@@ -65,6 +78,22 @@ if ($result) {
     while ($row = mysqli_fetch_assoc($result)) {
         $orders[] = $row;
     }
+}
+
+$invResult = mysqli_query($conn, "SELECT id, item_name, unit, quantity_on_hand FROM inventory_items ORDER BY item_name");
+$inventoryItems = [];
+while ($invRow = mysqli_fetch_assoc($invResult)) {
+    $inventoryItems[] = $invRow;
+}
+
+$deductedTotals = [];
+$logResult = mysqli_query($conn, "SELECT l.order_id, l.quantity, i.item_name, i.unit FROM inventory_logs l JOIN inventory_items i ON l.item_id = i.id WHERE l.order_id IS NOT NULL");
+while ($logRow = mysqli_fetch_assoc($logResult)) {
+    $oid = $logRow['order_id'];
+    if (!isset($deductedTotals[$oid])) {
+        $deductedTotals[$oid] = [];
+    }
+    $deductedTotals[$oid][] = $logRow['quantity'] . ' ' . $logRow['unit'] . ' ' . $logRow['item_name'];
 }
 
 function buildQuery($params) {
@@ -370,6 +399,11 @@ table.data-table {
     color: #966a1f;
 }
 
+.status-badge.status-preparing {
+    background-color: #f3e8fb;
+    color: #6b3fa0;
+}
+
 .status-badge.status-approved {
     background-color: #e5f2ea;
     color: #2f6b45;
@@ -641,6 +675,80 @@ table.data-table {
     background-color: #263748;
 }
 
+.order-modal-inventory {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid #edeef1;
+}
+
+.inventory-deduct-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.inventory-deduct-row {
+    display: flex;
+    gap: 8px;
+}
+
+.inventory-deduct-row select,
+.inventory-deduct-row input {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid #c9ccd2;
+    border-radius: 3px;
+    font-size: 12.5px;
+    font-family: inherit;
+    background-color: #ffffff;
+}
+
+.inventory-deduct-row select:focus,
+.inventory-deduct-row input:focus {
+    outline: none;
+    border-color: #3a6ea5;
+}
+
+.inventory-deduct-form button {
+    padding: 8px 16px;
+    background-color: #a3402a;
+    color: #ffffff;
+    border: 1px solid #a3402a;
+    border-radius: 3px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.inventory-deduct-form button:hover {
+    background-color: #85331f;
+}
+
+.inventory-deduct-hint {
+    font-size: 11px;
+    color: #9099a3;
+}
+
+.inventory-deducted-log {
+    margin-top: 10px;
+    font-size: 11.5px;
+    color: #4c5560;
+}
+
+.inventory-deducted-log ul {
+    list-style: none;
+    margin-top: 4px;
+}
+
+.inventory-deducted-log li {
+    padding: 4px 0;
+    border-bottom: 1px solid #f0f1f3;
+}
+
+.inventory-deducted-log li:last-child {
+    border-bottom: none;
+}
+
 @media (max-width: 700px) {
     .order-modal-body {
         grid-template-columns: 1fr;
@@ -674,13 +782,13 @@ table.data-table {
         </div>
 
         <div class="filter-tabs">
-            <a href="<?php echo htmlspecialchars(buildQuery(['category' => 'all', 'page' => 1])); ?>" class="filter-tab <?php echo $category === 'all' ? 'active' : ''; ?>">All</a>
-            <a href="<?php echo htmlspecialchars(buildQuery(['category' => 'Tarpaulin', 'page' => 1])); ?>" class="filter-tab <?php echo $category === 'Tarpaulin' ? 'active' : ''; ?>">Tarpaulin</a>
-            <a href="<?php echo htmlspecialchars(buildQuery(['category' => 'Sticker', 'page' => 1])); ?>" class="filter-tab <?php echo $category === 'Sticker' ? 'active' : ''; ?>">Sticker</a>
+            <a href="<?php echo htmlspecialchars(buildQuery(['category' => 'all', 'view' => 'active', 'page' => 1])); ?>" class="filter-tab <?php echo ($category === 'all' && $view === 'active') ? 'active' : ''; ?>">All</a>
+            <a href="<?php echo htmlspecialchars(buildQuery(['category' => 'Tarpaulin', 'view' => 'active', 'page' => 1])); ?>" class="filter-tab <?php echo ($category === 'Tarpaulin' && $view === 'active') ? 'active' : ''; ?>">Tarpaulin</a>
+            <a href="<?php echo htmlspecialchars(buildQuery(['category' => 'Sticker', 'view' => 'active', 'page' => 1])); ?>" class="filter-tab <?php echo ($category === 'Sticker' && $view === 'active') ? 'active' : ''; ?>">Sticker</a>
+            <a href="<?php echo htmlspecialchars(buildQuery(['view' => 'approved', 'page' => 1])); ?>" class="filter-tab <?php echo $view === 'approved' ? 'active' : ''; ?>">Approved</a>
             <select class="sort-select" onchange="window.location.href = this.value">
-                <option value="<?php echo htmlspecialchars(buildQuery(['sort' => 'newest', 'view' => 'active', 'page' => 1])); ?>" <?php echo ($sort === 'newest' && $view === 'active') ? 'selected' : ''; ?>>Newest First</option>
-                <option value="<?php echo htmlspecialchars(buildQuery(['sort' => 'oldest', 'view' => 'active', 'page' => 1])); ?>" <?php echo ($sort === 'oldest' && $view === 'active') ? 'selected' : ''; ?>>Oldest First</option>
-                <option value="<?php echo htmlspecialchars(buildQuery(['view' => 'approved', 'page' => 1])); ?>" <?php echo $view === 'approved' ? 'selected' : ''; ?>>Approved List</option>
+                <option value="<?php echo htmlspecialchars(buildQuery(['sort' => 'newest', 'page' => 1])); ?>" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest First</option>
+                <option value="<?php echo htmlspecialchars(buildQuery(['sort' => 'oldest', 'page' => 1])); ?>" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
             </select>
         </div>        <div class="data-panel">
             <div class="data-panel-toolbar">
@@ -732,7 +840,8 @@ table.data-table {
                                     "fulfillment_method" => $order["fulfillment_method"],
                                     "quoted_price" => $order["quoted_price"],
                                     "date_ordered" => date("M d, Y g:i A", strtotime($order["date_ordered"])),
-                                    "image" => $imagePath
+                                    "image" => $imagePath,
+                                    "deducted" => $deductedTotals[$order["id"]] ?? []
                                 ], JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
                             <td>
                                 <div class="cell-name"><?php echo htmlspecialchars($order['full_name'] ?? 'Unknown'); ?></div>
@@ -827,6 +936,11 @@ table.data-table {
                     <h3>Quotation</h3>
                     <div id="modalQuoteArea"></div>
                 </div>
+
+                <div class="order-modal-inventory">
+                    <h3>Deduct Inventory</h3>
+                    <div id="modalInventoryArea"></div>
+                </div>
             </div>
 
             <div class="order-modal-section">
@@ -842,6 +956,8 @@ table.data-table {
 </div>
 
 <script>
+var INVENTORY_ITEMS = <?php echo json_encode($inventoryItems, JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
 function openOrderModal(order) {
     var imageWrap = document.getElementById('modalImageWrap');
     var downloadWrap = document.getElementById('modalImageDownloadWrap');
@@ -889,6 +1005,15 @@ function openOrderModal(order) {
                 '<input type="number" step="0.01" min="0" name="quoted_price" placeholder="Enter price" required>' +
                 '<button type="submit" name="quote_submit">Send Quote</button>' +
             '</form>';
+    } else if (order.status === 'quoted' && order.quoted_price) {
+        quoteArea.innerHTML =
+            '<div class="order-modal-quote-existing">' +
+                '<span>Quoted Price</span><strong>\u20b1' + parseFloat(order.quoted_price).toLocaleString(undefined, {minimumFractionDigits: 2}) + '</strong>' +
+            '</div>' +
+            '<form method="POST" action="orders.php" style="margin-top: 8px;">' +
+                '<input type="hidden" name="order_id" value="' + order.id + '">' +
+                '<button type="submit" name="approve_submit" style="width: 100%; padding: 8px 16px; background-color: #2f6b45; color: #ffffff; border: 1px solid #2f6b45; border-radius: 3px; font-size: 12.5px; font-weight: 600; cursor: pointer;">Approve Order</button>' +
+            '</form>';
     } else if (order.quoted_price) {
         quoteArea.innerHTML =
             '<div class="order-modal-quote-existing">' +
@@ -896,6 +1021,47 @@ function openOrderModal(order) {
             '</div>';
     } else {
         quoteArea.innerHTML = '<div class="order-modal-quote-existing"><span>No quotation yet.</span></div>';
+    }
+
+    var inventoryArea = document.getElementById('modalInventoryArea');
+
+    if (order.status === 'approved') {
+        var options = '';
+        var preselectId = null;
+        INVENTORY_ITEMS.forEach(function (item) {
+            var matches = (order.product_type === 'Tarpaulin' && item.item_name === 'Tarpaulin') ||
+                          (order.product_type === 'Sticker' && item.item_name === 'Sticker Paper');
+            if (matches && preselectId === null) {
+                preselectId = item.id;
+            }
+            options += '<option value="' + item.id + '"' + (matches ? ' selected' : '') + '>' +
+                            item.item_name + ' (' + parseFloat(item.quantity_on_hand).toLocaleString() + ' ' + item.unit + ' on hand)' +
+                       '</option>';
+        });
+
+        inventoryArea.innerHTML =
+            '<form method="POST" action="inventory_action.php" class="inventory-deduct-form">' +
+                '<input type="hidden" name="order_id" value="' + order.id + '">' +
+                '<div class="inventory-deduct-row">' +
+                    '<select name="item_id" required>' + options + '</select>' +
+                    '<input type="number" step="0.01" min="0.01" name="quantity" placeholder="Qty" required>' +
+                '</div>' +
+                '<div class="inventory-deduct-hint">Select the material used and enter the amount to subtract from stock.</div>' +
+                '<button type="submit" name="deduct_stock"><i class="fa-solid fa-minus"></i> Deduct from Inventory</button>' +
+            '</form>';
+    } else if (order.status === 'preparing') {
+        inventoryArea.innerHTML = '<div class="order-modal-quote-existing"><span>Stock already deducted for this order.</span></div>';
+    } else {
+        inventoryArea.innerHTML = '<div class="order-modal-quote-existing"><span>Approve the order first before deducting stock.</span></div>';
+    }
+
+    if (order.deducted && order.deducted.length > 0) {
+        var deductedHtml = '<div class="inventory-deducted-log"><span>Already deducted for this order:</span><ul>';
+        order.deducted.forEach(function (entry) {
+            deductedHtml += '<li>' + entry + '</li>';
+        });
+        deductedHtml += '</ul></div>';
+        inventoryArea.innerHTML += deductedHtml;
     }
 
     document.getElementById('orderModal').classList.add('active');
